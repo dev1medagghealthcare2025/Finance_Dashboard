@@ -6,7 +6,7 @@ export const getDb = () => {
   if (!client) {
     throw new Error("MongoDB client not initialized. Call connectMongo() first.");
   }
-  const dbName = process.env.MONGO_DB_NAME || "harmony";
+  const dbName = process.env.MONGO_DB_NAME || "harmony_health_finance";
   return client.db(dbName);
 };
 

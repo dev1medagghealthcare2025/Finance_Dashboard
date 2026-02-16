@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { config as loadEnv } from "dotenv";
+import bcrypt from "bcryptjs";
 
 import { connectMongo } from "./mongo.js";
 import { requireJwtUser } from "./middleware/requireJwtUser.js";
@@ -9,6 +10,7 @@ import { patientsRouter } from "./routes/patients.js";
 import { invoicesRouter } from "./routes/invoices.js";
 import { authRouter } from "./routes/auth.js";
 import { adminRouter } from "./routes/admin.js";
+import { getDb } from "./mongo.js";
 
 loadEnv({ path: new URL("../.env", import.meta.url) });
 
@@ -35,6 +37,48 @@ app.use("/api/admin", adminRouter);
 const port = Number(process.env.API_PORT || 3001);
 
 await connectMongo();
+
+const seedAdminIfNeeded = async () => {
+  const email = String(process.env.SEED_ADMIN_EMAIL || "").trim().toLowerCase();
+  const password = String(process.env.SEED_ADMIN_PASSWORD || "");
+  const name = String(process.env.SEED_ADMIN_NAME || "Website Head");
+  if (!email || !password) return;
+
+  const db = getDb();
+  const existingHead = await db.collection("users").findOne({ role: "website_head" });
+  if (existingHead) return;
+
+  const existing = await db.collection("users").findOne({ email });
+  if (existing) {
+    await db.collection("users").updateOne(
+      { _id: existing._id },
+      {
+        $set: {
+          role: "website_head",
+          status: "active",
+          permissions: existing.permissions && existing.permissions.length ? existing.permissions : ["*"],
+          updatedAt: new Date(),
+        },
+      },
+    );
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  await db.collection("users").insertOne({
+    email,
+    passwordHash,
+    name,
+    department: "",
+    status: "active",
+    role: "website_head",
+    permissions: ["*"],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+};
+
+await seedAdminIfNeeded();
 
 app.listen(port, () => {
   // eslint-disable-next-line no-console
