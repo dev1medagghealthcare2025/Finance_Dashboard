@@ -15,6 +15,19 @@ import { Invoice, InvoiceItem, Patient } from '@/types';
 import logoImage from '@/assets/logo.png';
 import { apiFetch } from '@/lib/apiClient';
 
+const asArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    const v = value as any;
+    if (Array.isArray(v.items)) return v.items as T[];
+    if (Array.isArray(v.data)) return v.data as T[];
+    if (Array.isArray(v.results)) return v.results as T[];
+    if (Array.isArray(v.hospitals)) return v.hospitals as T[];
+    if (Array.isArray(v.patients)) return v.patients as T[];
+  }
+  return [];
+};
+
 const InvoiceEdit = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -26,6 +39,9 @@ const InvoiceEdit = () => {
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [hospitals, setHospitals] = useState<any[]>([]);
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
+
+  const safeHospitals = useMemo(() => asArray<any>(hospitals), [hospitals]);
+  const safeAllPatients = useMemo(() => asArray<Patient>(allPatients), [allPatients]);
   
   // Patient edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -42,8 +58,8 @@ const InvoiceEdit = () => {
           apiFetch<Patient[]>('/api/patients'),
         ]);
 
-        setHospitals(hosp || []);
-        setAllPatients(pat || []);
+        setHospitals(asArray<any>(hosp));
+        setAllPatients(asArray<Patient>(pat));
 
         if (inv) {
           setInvoice(inv);
@@ -63,20 +79,20 @@ const InvoiceEdit = () => {
     load();
   }, [id]);
 
-  const hospital = invoice ? hospitals.find(h => h.id === invoice.hospitalId) : null;
+  const hospital = invoice ? safeHospitals.find(h => h.id === invoice.hospitalId) : null;
 
   // Get patients from same hospital that are not yet invoiced
   const eligiblePatients = useMemo(() => {
     if (!invoice) return [];
-    return allPatients.filter(
+    return safeAllPatients.filter(
       p => p.hospitalId === invoice.hospitalId && 
            p.invoiceStatus === 'To Be Raised' &&
            !items.some(item => item.patientId === p.id)
     );
-  }, [invoice, allPatients, items]);
+  }, [invoice, safeAllPatients, items]);
 
   const addItem = (patientId: string) => {
-    const patient = allPatients.find((p) => p.id === patientId);
+    const patient = safeAllPatients.find((p) => p.id === patientId);
     if (!patient) return;
 
     setItems((prev) => [
@@ -101,7 +117,7 @@ const InvoiceEdit = () => {
 
   const openEditDialog = (index: number) => {
     const item = items[index];
-    const patient = allPatients.find(p => p.id === item.patientId);
+    const patient = safeAllPatients.find(p => p.id === item.patientId);
     if (patient) {
       setEditingPatientIndex(index);
       setEditingPatient({ ...patient });
@@ -137,7 +153,7 @@ const InvoiceEdit = () => {
       }));
 
       // Also update the patient in API-backed state
-      const updatedPatients = allPatients.map(p => {
+      const updatedPatients = safeAllPatients.map(p => {
         if (p.id === editingPatient.id) {
           return {
             ...p,

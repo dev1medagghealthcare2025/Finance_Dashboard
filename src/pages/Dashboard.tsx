@@ -19,6 +19,20 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '@/lib/apiClient';
 
+const asArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    const v = value as any;
+    if (Array.isArray(v.items)) return v.items as T[];
+    if (Array.isArray(v.data)) return v.data as T[];
+    if (Array.isArray(v.results)) return v.results as T[];
+    if (Array.isArray(v.hospitals)) return v.hospitals as T[];
+    if (Array.isArray(v.invoices)) return v.invoices as T[];
+    if (Array.isArray(v.patients)) return v.patients as T[];
+  }
+  return [];
+};
+
 const Dashboard = () => {
   const [monthFilter, setMonthFilter] = useState<string[]>([]);
   const [yearFilter, setYearFilter] = useState<string[]>(['2026']);
@@ -41,9 +55,9 @@ const Dashboard = () => {
           apiFetch<any[]>('/api/invoices'),
           apiFetch<any[]>('/api/patients'),
         ]);
-        setHospitals(h || []);
-        setInvoices(i || []);
-        setPatients(p || []);
+        setHospitals(asArray(h));
+        setInvoices(asArray(i));
+        setPatients(asArray(p));
       } catch {
         // keep UI usable even if API temporarily fails
         setHospitals([]);
@@ -55,8 +69,12 @@ const Dashboard = () => {
     load();
   }, []);
   
-  const cities = useMemo(() => [...new Set(hospitals.map(h => h.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [hospitals]);
-  const areas = useMemo(() => [...new Set(hospitals.map(h => h.area).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [hospitals]);
+  const safeHospitals = useMemo(() => asArray<any>(hospitals), [hospitals]);
+  const safeInvoices = useMemo(() => asArray<any>(invoices), [invoices]);
+  const safePatients = useMemo(() => asArray<any>(patients), [patients]);
+
+  const cities = useMemo(() => [...new Set(safeHospitals.map(h => h.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [safeHospitals]);
+  const areas = useMemo(() => [...new Set(safeHospitals.map(h => h.area).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [safeHospitals]);
   
 
   // Month and Year options for multi-select
@@ -89,7 +107,7 @@ const Dashboard = () => {
 
   // Dashboard Summary - filtered by Invoice Month only (not appointment month)
   const dashboardStats = useMemo(() => {
-    let filtered = invoices;
+    let filtered = safeInvoices;
     if (yearFilter.length > 0) {
       const selectedYears = yearFilter.map(y => parseInt(y));
       filtered = filtered.filter(inv => selectedYears.includes(inv.year));
@@ -128,12 +146,12 @@ const Dashboard = () => {
       totalCancelled: cancelled.length,
       holdCount: hold.length,
     };
-  }, [invoices, yearFilter, monthFilter, hospitalFilter, cityFilter, areaFilter]);
+  }, [safeInvoices, yearFilter, monthFilter, hospitalFilter, cityFilter, areaFilter]);
 
   // Monthly Invoice Amount data for Line Chart (Invoice Month based)
   const monthlyInvoiceData = useMemo(() => {
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    let filtered = invoices.filter(inv => inv.status !== 'Cancelled' && inv.status !== 'Hold');
+    let filtered = safeInvoices.filter(inv => inv.status !== 'Cancelled' && inv.status !== 'Hold');
     
     if (yearFilter.length > 0) {
       const selectedYears = yearFilter.map(y => parseInt(y));
@@ -158,11 +176,11 @@ const Dashboard = () => {
     });
 
     return monthlyData.filter(m => m.totalAmount > 0);
-  }, [invoices, yearFilter, hospitalFilter, cityFilter, areaFilter]);
+  }, [safeInvoices, yearFilter, hospitalFilter, cityFilter, areaFilter]);
 
   // Service Type Summary - filtered by Appointment Month (patient date)
   const serviceTypeStats = useMemo(() => {
-    let filtered = patients;
+    let filtered = safePatients;
     if (yearFilter.length > 0) {
       const selectedYears = yearFilter.map(y => parseInt(y));
       filtered = filtered.filter(p => selectedYears.includes(p.year));
@@ -211,12 +229,12 @@ const Dashboard = () => {
       ip: getStats('IP'),
       diagnostic: getStats('Diagnostic'),
     };
-  }, [patients, yearFilter, appointmentMonthFilter, hospitalFilter, cityFilter, areaFilter]);
+  }, [safePatients, yearFilter, appointmentMonthFilter, hospitalFilter, cityFilter, areaFilter]);
 
   // Bar Chart Data - based on Appointment Month
   const barChartData = useMemo(() => {
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    let filtered = patients;
+    let filtered = safePatients;
     
     if (yearFilter.length > 0) {
       const selectedYears = yearFilter.map(y => parseInt(y));
@@ -250,7 +268,7 @@ const Dashboard = () => {
     });
 
     return monthlyData.filter(m => m.op > 0 || m.ip > 0 || m.diagnostic > 0);
-  }, [patients, yearFilter, appointmentMonthFilter, hospitalFilter, cityFilter, areaFilter]);
+  }, [safePatients, yearFilter, appointmentMonthFilter, hospitalFilter, cityFilter, areaFilter]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -270,8 +288,8 @@ const Dashboard = () => {
 
   // Multi-select options - sorted A-Z
   const hospitalOptions = useMemo(() => 
-    hospitals.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => ({ value: h.id, label: h.name, sublabel: `${h.city}${h.area ? `, ${h.area}` : ''}` }))
-  , [hospitals]);
+    safeHospitals.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => ({ value: h.id, label: h.name, sublabel: `${h.city}${h.area ? `, ${h.area}` : ''}` }))
+  , [safeHospitals]);
 
   const cityOptions = useMemo(() => 
     cities.map(c => ({ value: c, label: c }))

@@ -18,6 +18,20 @@ import { format } from 'date-fns';
 import logoImage from '@/assets/logo.png';
 import { apiFetch } from '@/lib/apiClient';
 
+const asArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    const v = value as any;
+    if (Array.isArray(v.items)) return v.items as T[];
+    if (Array.isArray(v.data)) return v.data as T[];
+    if (Array.isArray(v.results)) return v.results as T[];
+    if (Array.isArray(v.hospitals)) return v.hospitals as T[];
+    if (Array.isArray(v.invoices)) return v.invoices as T[];
+    if (Array.isArray(v.patients)) return v.patients as T[];
+  }
+  return [];
+};
+
 const InvoiceDashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -36,8 +50,12 @@ const InvoiceDashboard = () => {
   const [hospitals, setHospitals] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
 
-  const areas = useMemo(() => [...new Set(hospitals.map(h => h.area).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [hospitals]);
-  const cities = useMemo(() => [...new Set(hospitals.map(h => h.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [hospitals]);
+  const safeHospitals = useMemo(() => asArray<any>(hospitals), [hospitals]);
+  const safePatients = useMemo(() => asArray<any>(patients), [patients]);
+  const safeInvoices = useMemo(() => asArray<Invoice>(invoices), [invoices]);
+
+  const areas = useMemo(() => [...new Set(safeHospitals.map(h => h.area).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [safeHospitals]);
+  const cities = useMemo(() => [...new Set(safeHospitals.map(h => h.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [safeHospitals]);
 
   const [paymentData, setPaymentData] = useState({ paymentDate: format(new Date(), 'yyyy-MM-dd'), paidAmount: 0, tdsPercent: 0, tdsAmount: 0, adjustmentAmount: 0, remarks: '' });
 
@@ -58,8 +76,8 @@ const InvoiceDashboard = () => {
 
   // Multi-select options - sorted A-Z (no "All" option for multi-select)
   const hospitalOptions = useMemo(() => 
-    hospitals.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => ({ value: h.id, label: h.name, sublabel: `${h.city}${h.area ? `, ${h.area}` : ''}` }))
-  , [hospitals]);
+    safeHospitals.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => ({ value: h.id, label: h.name, sublabel: `${h.city}${h.area ? `, ${h.area}` : ''}` }))
+  , [safeHospitals]);
 
   const areaOptions = useMemo(() => 
     areas.map(a => ({ value: a, label: a }))
@@ -102,9 +120,9 @@ const InvoiceDashboard = () => {
           apiFetch<any[]>('/api/hospitals'),
           apiFetch<any[]>('/api/patients'),
         ]);
-        setInvoices(inv || []);
-        setHospitals(hosp || []);
-        setPatients(pat || []);
+        setInvoices(asArray<Invoice>(inv));
+        setHospitals(asArray<any>(hosp));
+        setPatients(asArray<any>(pat));
       } catch (e) {
         toast({
           title: 'Error',
@@ -118,16 +136,16 @@ const InvoiceDashboard = () => {
 
   const refreshInvoices = async () => {
     const inv = await apiFetch<Invoice[]>('/api/invoices');
-    setInvoices(inv || []);
+    setInvoices(asArray<Invoice>(inv));
   };
 
   const refreshPatients = async () => {
     const pat = await apiFetch<any[]>('/api/patients');
-    setPatients(pat || []);
+    setPatients(asArray<any>(pat));
   };
 
   const filteredInvoices = useMemo(() => {
-    let filtered = invoices;
+    let filtered = safeInvoices;
     if (yearFilter.length > 0) {
       const selectedYears = yearFilter.map(y => parseInt(y));
       filtered = filtered.filter(inv => selectedYears.includes(inv.year));
@@ -176,7 +194,7 @@ const InvoiceDashboard = () => {
     }
     
     return filtered;
-  }, [invoices, yearFilter, monthFilter, hospitalFilter, areaFilter, cityFilter, statusFilter, appointmentMonthFilter, searchQuery]);
+  }, [safeInvoices, yearFilter, monthFilter, hospitalFilter, areaFilter, cityFilter, statusFilter, appointmentMonthFilter, searchQuery]);
 
   // Separate by status for display
   // Cancelled = INCLUDED in total invoice amount (don't decrease)
@@ -258,7 +276,7 @@ const InvoiceDashboard = () => {
     const totalTds = updatedPayments.reduce((sum, p) => sum + p.tdsAmount, 0);
     const totalAdjusted = updatedPayments.reduce((sum, p) => sum + p.adjustmentAmount, 0);
 
-    const updatedInvoices = invoices.map(inv => {
+    const updatedInvoices = safeInvoices.map(inv => {
       if (inv.id === selectedInvoice.id) {
         const newBalanceAmount = inv.totalAmount - totalPaid - totalTds - totalAdjusted;
         const { shortAmount, excessAmount } = calculateShortExcess({ ...inv, paidAmount: totalPaid, tdsAmount: totalTds, adjustedAmount: totalAdjusted });
@@ -308,7 +326,7 @@ const InvoiceDashboard = () => {
 
   const handleStatusChange = async (invoiceId: string, newStatus: Invoice['status']) => {
     try {
-      const invoice = invoices.find(inv => inv.id === invoiceId);
+      const invoice = safeInvoices.find(inv => inv.id === invoiceId);
       if (!invoice) return;
 
       const updated = { ...invoice, status: newStatus };
@@ -329,13 +347,13 @@ const InvoiceDashboard = () => {
   };
 
   const handleDeleteInvoice = async (invoiceId: string) => {
-    const invoice = invoices.find(inv => inv.id === invoiceId);
+    const invoice = safeInvoices.find(inv => inv.id === invoiceId);
     if (!invoice) return;
 
     try {
       // Revert patient statuses to 'To Be Raised'
       const affected = new Set(invoice.items.map(i => i.patientId));
-      for (const p of patients) {
+      for (const p of safePatients) {
         if (affected.has(p.id)) {
           await apiFetch(`/api/patients/${p.id}`, {
             method: 'PUT',
@@ -358,7 +376,7 @@ const InvoiceDashboard = () => {
   };
 
   const handleDownloadInvoice = async (invoice: Invoice) => {
-    const hospital = hospitals.find(h => h.id === invoice.hospitalId);
+    const hospital = safeHospitals.find(h => h.id === invoice.hospitalId);
     const hospitalAddress = [hospital?.address, hospital?.area, hospital?.city, hospital?.state, hospital?.pinCode].filter(Boolean).join(', ');
     
     const hasDCI = invoice.items.some(i => i.dciCharges && i.dciCharges > 0);

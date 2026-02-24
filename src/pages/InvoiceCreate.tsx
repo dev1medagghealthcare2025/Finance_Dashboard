@@ -17,6 +17,19 @@ import { SearchableSelect } from '@/components/ui/searchable-select';
 import logoImage from '@/assets/logo.png';
 import { apiFetch } from '@/lib/apiClient';
 
+const asArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    const v = value as any;
+    if (Array.isArray(v.items)) return v.items as T[];
+    if (Array.isArray(v.data)) return v.data as T[];
+    if (Array.isArray(v.results)) return v.results as T[];
+    if (Array.isArray(v.hospitals)) return v.hospitals as T[];
+    if (Array.isArray(v.patients)) return v.patients as T[];
+  }
+  return [];
+};
+
 const InvoiceCreate = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -30,13 +43,16 @@ const InvoiceCreate = () => {
 
   const [hospitals, setHospitals] = useState<any[]>([]);
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
+
+  const safeHospitals = useMemo(() => asArray<any>(hospitals), [hospitals]);
+  const safeAllPatients = useMemo(() => asArray<Patient>(allPatients), [allPatients]);
   
   // Full patient edit dialog state (matching InvoiceEdit)
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingPatient, setEditingPatient] = useState<Partial<Patient> | null>(null);
 
-  const hospital = hospitals.find((h) => h.id === selectedHospital);
+  const hospital = safeHospitals.find((h) => h.id === selectedHospital);
 
   useEffect(() => {
     const load = async () => {
@@ -45,8 +61,8 @@ const InvoiceCreate = () => {
           apiFetch<any[]>('/api/hospitals'),
           apiFetch<Patient[]>('/api/patients'),
         ]);
-        setHospitals(h || []);
-        setAllPatients(p || []);
+        setHospitals(asArray<any>(h));
+        setAllPatients(asArray<Patient>(p));
       } catch (e) {
         toast({
           title: 'Error',
@@ -61,15 +77,15 @@ const InvoiceCreate = () => {
 
   // Hospital options with city and area
   const hospitalOptions = useMemo(() => 
-    hospitals.map(h => ({
+    safeHospitals.map(h => ({
       value: h.id,
       label: h.name,
       sublabel: `${h.city}${h.area ? `, ${h.area}` : ''}`,
     }))
-  , [hospitals]);
+  , [safeHospitals]);
 
   // Get unique appointment months from eligible patients
-  const eligiblePatientsBase = allPatients.filter(
+  const eligiblePatientsBase = safeAllPatients.filter(
     (p) => p.hospitalId === selectedHospital && p.invoiceStatus === 'To Be Raised'
   );
 
@@ -92,11 +108,11 @@ const InvoiceCreate = () => {
   useEffect(() => {
     const state = location.state as { selectedPatientIds?: string[] } | null;
     if (state?.selectedPatientIds && state.selectedPatientIds.length > 0) {
-      const firstPatient = allPatients.find(p => state.selectedPatientIds!.includes(p.id));
+      const firstPatient = safeAllPatients.find(p => state.selectedPatientIds!.includes(p.id));
       if (firstPatient) {
         setSelectedHospital(firstPatient.hospitalId);
         const selectedItems: InvoiceItem[] = state.selectedPatientIds
-          .map(id => allPatients.find(p => p.id === id))
+          .map(id => safeAllPatients.find(p => p.id === id))
           .filter((p): p is NonNullable<typeof p> => p !== undefined && p.hospitalId === firstPatient.hospitalId)
           .map(patient => ({
             patientId: patient.id,
@@ -112,11 +128,11 @@ const InvoiceCreate = () => {
         setItems(selectedItems);
       }
     }
-  }, [location.state, allPatients]);
+  }, [location.state, safeAllPatients]);
 
   const refreshPatients = async () => {
     const p = await apiFetch<Patient[]>('/api/patients');
-    setAllPatients(p || []);
+    setAllPatients(asArray<Patient>(p));
   };
 
   const addItem = (patientId: string) => {
@@ -145,7 +161,7 @@ const InvoiceCreate = () => {
 
   const handleEditItem = (index: number) => {
     const item = items[index];
-    const patient = allPatients.find(p => p.id === item.patientId);
+    const patient = safeAllPatients.find(p => p.id === item.patientId);
     if (patient) {
       setEditingIndex(index);
       setEditingPatient({ ...patient });
@@ -181,7 +197,7 @@ const InvoiceCreate = () => {
       }));
 
       // Also update the patient in API-backed state
-      const updatedPatients = allPatients.map(p => {
+      const updatedPatients = safeAllPatients.map(p => {
         if (p.id === editingPatient.id) {
           return {
             ...p,
@@ -285,7 +301,7 @@ const InvoiceCreate = () => {
 
       // Update patient invoice status + invoice number
       for (const it of items) {
-        const p = allPatients.find(x => x.id === it.patientId);
+        const p = safeAllPatients.find(x => x.id === it.patientId);
         if (!p) continue;
         await apiFetch(`/api/patients/${p.id}`, {
           method: 'PUT',

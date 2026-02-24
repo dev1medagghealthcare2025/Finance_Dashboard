@@ -20,6 +20,20 @@ import { format, parseISO, isValid } from 'date-fns';
 import { usePermissions } from '@/hooks/usePermissions';
 import { apiFetch } from '@/lib/apiClient';
 
+const asArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    const v = value as any;
+    if (Array.isArray(v.items)) return v.items as T[];
+    if (Array.isArray(v.data)) return v.data as T[];
+    if (Array.isArray(v.results)) return v.results as T[];
+    if (Array.isArray(v.hospitals)) return v.hospitals as T[];
+    if (Array.isArray(v.invoices)) return v.invoices as T[];
+    if (Array.isArray(v.patients)) return v.patients as T[];
+  }
+  return [];
+};
+
 // Helper to parse various date formats including Excel serial numbers
 const parseExcelDate = (value: string | number): string => {
   if (!value) return format(new Date(), 'yyyy-MM-dd');
@@ -168,10 +182,14 @@ const PatientDetails = () => {
     updateBillStatus(patientId, 'billAttached', false);
     toast({ title: 'Bill Deleted', description: 'Patient bill has been removed.' });
   };
-  
-  const cities = useMemo(() => [...new Set(patients.map(p => p.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [patients]);
-  const areas = useMemo(() => [...new Set(patients.map(p => p.area).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [patients]);
-  const bdNames = useMemo(() => [...new Set(patients.map(p => p.bdName).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [patients]);
+
+  const safePatients = useMemo(() => asArray<Patient>(patients), [patients]);
+  const safeHospitals = useMemo(() => asArray<any>(hospitals), [hospitals]);
+  const safeInvoices = useMemo(() => asArray<any>(invoices), [invoices]);
+
+  const cities = useMemo(() => [...new Set(safePatients.map(p => p.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [safePatients]);
+  const areas = useMemo(() => [...new Set(safePatients.map(p => p.area).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [safePatients]);
+  const bdNames = useMemo(() => [...new Set(safePatients.map(p => p.bdName).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [safePatients]);
 
   const [formData, setFormData] = useState({
     name: '', phone: '', patientDate: format(new Date(), 'yyyy-MM-dd'),
@@ -191,9 +209,9 @@ const PatientDetails = () => {
           apiFetch<any[]>('/api/hospitals'),
           apiFetch<any[]>('/api/invoices'),
         ]);
-        setPatients(p || []);
-        setHospitals(h || []);
-        setInvoices(i || []);
+        setPatients(asArray<Patient>(p));
+        setHospitals(asArray<any>(h));
+        setInvoices(asArray<any>(i));
       } catch (e) {
         toast({
           title: 'Error',
@@ -207,7 +225,7 @@ const PatientDetails = () => {
 
   const refreshPatients = async () => {
     const p = await apiFetch<Patient[]>('/api/patients');
-    setPatients(p || []);
+    setPatients(asArray<Patient>(p));
   };
 
   // Month and Year options for multi-select
@@ -239,7 +257,7 @@ const PatientDetails = () => {
   }, []);
 
   const allFilteredPatients = useMemo(() => {
-    return patients.filter((p) => {
+    return safePatients.filter((p) => {
       let matchesDate = true;
       if (yearFilter.length > 0) {
         const selectedYears = yearFilter.map(y => parseInt(y));
@@ -286,11 +304,11 @@ const PatientDetails = () => {
       }
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-  }, [patients, yearFilter, monthFilter, searchQuery, invoiceStatusFilter, serviceTypeFilter, hospitalFilter, cityFilter, areaFilter, bdNameFilter, billAttachedFilter, sortField, sortOrder, billStatuses]);
+  }, [safePatients, yearFilter, monthFilter, searchQuery, invoiceStatusFilter, serviceTypeFilter, hospitalFilter, cityFilter, areaFilter, bdNameFilter, billAttachedFilter, sortField, sortOrder, billStatuses]);
 
   // Non-bill filtered patients (for bill counts - excludes bill filter)
   const nonBillFilteredPatients = useMemo(() => {
-    return patients.filter((p) => {
+    return safePatients.filter((p) => {
       let matchesDate = true;
       if (yearFilter.length > 0) {
         const selectedYears = yearFilter.map(y => parseInt(y));
@@ -319,7 +337,7 @@ const PatientDetails = () => {
       const matchesBdName = bdNameFilter.length === 0 || (p.bdName && bdNameFilter.includes(p.bdName));
       return matchesDate && matchesSearch && matchesStatus && matchesService && matchesHospital && matchesCity && matchesArea && matchesBdName;
     });
-  }, [patients, yearFilter, monthFilter, searchQuery, invoiceStatusFilter, serviceTypeFilter, hospitalFilter, cityFilter, areaFilter, bdNameFilter]);
+  }, [safePatients, yearFilter, monthFilter, searchQuery, invoiceStatusFilter, serviceTypeFilter, hospitalFilter, cityFilter, areaFilter, bdNameFilter]);
 
   // Bill Summary counts - based on filtered patients (excluding bill filter itself)
   const billCounts = useMemo(() => {
@@ -381,8 +399,8 @@ const PatientDetails = () => {
 
   // Multi-select options - sorted A-Z (no "All" option for multi-select)
   const hospitalOptions = useMemo(() => 
-    hospitals.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => ({ value: h.id, label: h.name, sublabel: `${h.city}${h.area ? `, ${h.area}` : ''}` }))
-  , [hospitals]);
+    safeHospitals.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => ({ value: h.id, label: h.name, sublabel: `${h.city}${h.area ? `, ${h.area}` : ''}` }))
+  , [safeHospitals]);
 
   const cityOptions = useMemo(() => 
     cities.map(c => ({ value: c, label: c }))
@@ -409,12 +427,12 @@ const PatientDetails = () => {
   ];
 
   const hospitalFormOptions = useMemo(() => 
-    hospitals.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => ({ value: h.id, label: h.name, sublabel: `${h.city}${h.area ? `, ${h.area}` : ''}` }))
-  , [hospitals]);
+    safeHospitals.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => ({ value: h.id, label: h.name, sublabel: `${h.city}${h.area ? `, ${h.area}` : ''}` }))
+  , [safeHospitals]);
 
   // Auto-fill hospital details when selected
   const handleHospitalChange = (hospitalId: string) => {
-    const hospital = hospitals.find(h => h.id === hospitalId);
+    const hospital = safeHospitals.find(h => h.id === hospitalId);
     if (hospital) {
       let sharePercent = formData.sharePercent;
       if (formData.serviceType === 'OP') sharePercent = hospital.opShare;
@@ -435,7 +453,7 @@ const PatientDetails = () => {
 
   // Auto-update share % when service type changes
   const handleServiceTypeChange = (serviceType: Patient['serviceType']) => {
-    const hospital = hospitals.find(h => h.id === formData.hospitalId);
+    const hospital = safeHospitals.find(h => h.id === formData.hospitalId);
     let sharePercent = formData.sharePercent;
     if (hospital) {
       if (serviceType === 'OP') sharePercent = hospital.opShare;
@@ -450,7 +468,7 @@ const PatientDetails = () => {
     if (patient.invoiceStatus !== 'Invoice Raised') return null;
     
     // Find invoice that contains this patient
-    const invoice = invoices.find(inv => 
+    const invoice = safeInvoices.find(inv => 
       inv.items.some(item => item.patientId === patient.id)
     );
     
@@ -473,7 +491,7 @@ const PatientDetails = () => {
   };
 
   const handleSavePatient = async () => {
-    const hospital = hospitals.find(h => h.id === formData.hospitalId);
+    const hospital = safeHospitals.find(h => h.id === formData.hospitalId);
     if (!hospital || !formData.name || !formData.patientDate) {
       toast({ title: 'Error', description: 'Please fill required fields (Name, Date, Hospital).', variant: 'destructive' });
       return;

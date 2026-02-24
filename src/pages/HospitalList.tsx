@@ -18,6 +18,18 @@ import { Hospital } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { usePermissions } from '@/hooks/usePermissions';
 
+const asArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    const v = value as any;
+    if (Array.isArray(v.items)) return v.items as T[];
+    if (Array.isArray(v.data)) return v.data as T[];
+    if (Array.isArray(v.results)) return v.results as T[];
+    if (Array.isArray(v.hospitals)) return v.hospitals as T[];
+  }
+  return [];
+};
+
 const HospitalList = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -40,9 +52,11 @@ const HospitalList = () => {
   const pageSize = 100;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const safeHospitals = useMemo(() => asArray<Hospital>(hospitals), [hospitals]);
+
   // City and Area options for filters
-  const cities = useMemo(() => [...new Set(hospitals.map(h => h.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [hospitals]);
-  const areas = useMemo(() => [...new Set(hospitals.map(h => h.area).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [hospitals]);
+  const cities = useMemo(() => [...new Set(safeHospitals.map(h => h.city).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [safeHospitals]);
+  const areas = useMemo(() => [...new Set(safeHospitals.map(h => h.area).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [safeHospitals]);
 
   // MOU status stored in localStorage (mouAttached can be auto or manual, mouSigned is always manual)
   const [mouStatuses, setMouStatuses] = useState<Record<string, { mouAttached?: boolean; mouSigned?: boolean }>>(() => {
@@ -73,7 +87,7 @@ const HospitalList = () => {
   const fetchHospitals = async () => {
     try {
       const data = await apiFetch('/api/hospitals');
-      setHospitals((data || []) as Hospital[]);
+      setHospitals(asArray<Hospital>(data));
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error(error);
@@ -110,7 +124,7 @@ const HospitalList = () => {
   };
 
   const allFilteredHospitals = useMemo(() => {
-    return hospitals.filter((h) => {
+    return safeHospitals.filter((h) => {
       // Match against name, alternate name, city, area
       const searchLower = searchQuery.toLowerCase();
       const matchesSearch = 
@@ -135,11 +149,11 @@ const HospitalList = () => {
       
       return matchesSearch && matchesStatus && matchesHospital && matchesCity && matchesArea && matchesMouAttached && matchesMouSigned;
     }).sort((a, b) => a.name.localeCompare(b.name)); // Default sort A-Z by name
-  }, [hospitals, searchQuery, statusFilter, hospitalFilter, cityFilter, areaFilter, mouAttachedFilter, mouSignedFilter, mouStatuses]);
+  }, [safeHospitals, searchQuery, statusFilter, hospitalFilter, cityFilter, areaFilter, mouAttachedFilter, mouSignedFilter, mouStatuses]);
 
   // Status-only filtered hospitals (for MOU counts - excludes MOU filters)
   const statusFilteredHospitals = useMemo(() => {
-    return hospitals.filter((h) => {
+    return safeHospitals.filter((h) => {
       const searchLower = searchQuery.toLowerCase();
       const matchesSearch = 
         h.name.toLowerCase().includes(searchLower) ||
@@ -152,7 +166,7 @@ const HospitalList = () => {
       const matchesArea = areaFilter.length === 0 || (h.area && areaFilter.includes(h.area));
       return matchesSearch && matchesStatus && matchesHospital && matchesCity && matchesArea;
     });
-  }, [hospitals, searchQuery, statusFilter, hospitalFilter, cityFilter, areaFilter]);
+  }, [safeHospitals, searchQuery, statusFilter, hospitalFilter, cityFilter, areaFilter]);
 
   // MOU Summary counts - based on status-filtered hospitals (so clicking Active/Inactive updates MOU counts)
   const mouCounts = useMemo(() => {
@@ -166,12 +180,12 @@ const HospitalList = () => {
 
   // Original totals - always from ALL hospitals (not filtered) for Live Summary cards
   const originalTotals = useMemo(() => ({
-    total: hospitals.length,
-    active: hospitals.filter(h => h.status === 'Active').length,
-    inactive: hospitals.filter(h => h.status === 'Inactive').length,
-    expiredSoon: hospitals.filter(h => h.status === 'Expired Soon').length,
-    expired: hospitals.filter(h => h.status === 'Expired').length,
-  }), [hospitals]);
+    total: safeHospitals.length,
+    active: safeHospitals.filter(h => h.status === 'Active').length,
+    inactive: safeHospitals.filter(h => h.status === 'Inactive').length,
+    expiredSoon: safeHospitals.filter(h => h.status === 'Expired Soon').length,
+    expired: safeHospitals.filter(h => h.status === 'Expired').length,
+  }), [safeHospitals]);
 
   // Current active status filter for highlighting
   const isStatusFilterActive = statusFilter.length > 0;
@@ -199,12 +213,12 @@ const HospitalList = () => {
 
   // Hospital options for multi-select dropdown - sorted A-Z (no "All" option for multi-select)
   const hospitalOptions = useMemo(() => 
-    hospitals.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => ({ 
+    safeHospitals.slice().sort((a, b) => a.name.localeCompare(b.name)).map(h => ({ 
       value: h.id, 
       label: h.name, 
       sublabel: h.alternateName ? `(${h.alternateName})` : undefined 
     }))
-  , [hospitals]);
+  , [safeHospitals]);
 
   const cityOptions = useMemo(() => 
     cities.map(c => ({ value: c, label: c }))
@@ -444,7 +458,7 @@ const HospitalList = () => {
 
     apiFetch(`/api/hospitals/${hospitalToDelete.id}`, { method: 'DELETE' })
       .then(() => {
-        const updatedHospitals = hospitals.filter(h => h.id !== hospitalToDelete.id);
+        const updatedHospitals = safeHospitals.filter(h => h.id !== hospitalToDelete.id);
         setHospitals(updatedHospitals);
         toast({ title: 'Hospital deleted', description: `${hospitalToDelete.name} has been removed.` });
       })

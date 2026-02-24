@@ -38,6 +38,18 @@ import { Users, Shield, Clock, CheckCircle, XCircle, Settings, Trash2 } from 'lu
 import { format } from 'date-fns';
 import { apiFetch } from '@/lib/apiClient';
 
+const asArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    const v = value as any;
+    if (Array.isArray(v.items)) return v.items as T[];
+    if (Array.isArray(v.data)) return v.data as T[];
+    if (Array.isArray(v.results)) return v.results as T[];
+    if (Array.isArray(v.users)) return v.users as T[];
+  }
+  return [];
+};
+
 interface UserProfile {
   id: string;
   email: string | null;
@@ -81,6 +93,8 @@ const Credentials = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const safeUsers = asArray<UserProfile>(users);
   
   // Department storage in localStorage (mock)
   const [userDepartments, setUserDepartments] = useState<Record<string, string>>(() => {
@@ -127,7 +141,7 @@ const Credentials = () => {
     setIsLoading(true);
     try {
       const data = await apiFetch<UserProfile[]>('/api/admin/users');
-      setUsers(data || []);
+      setUsers(asArray<UserProfile>(data));
     } catch (error) {
       console.error('Error fetching users:', error);
       toast({
@@ -316,12 +330,12 @@ const Credentials = () => {
     }
   };
 
-  const pendingCount = users.filter(u => u.status === 'pending').length;
-  const totalCount = users.length;
-  const activeCount = users.filter(u => u.status === 'active').length;
-  const inactiveCount = users.filter(u => u.status === 'inactive').length;
+  const pendingCount = safeUsers.filter(u => u.status === 'pending').length;
+  const totalCount = safeUsers.length;
+  const activeCount = safeUsers.filter(u => u.status === 'active').length;
+  const inactiveCount = safeUsers.filter(u => u.status === 'inactive').length;
 
-  const filteredUsers = users.filter(user => statusFilter === 'all' || user.status === statusFilter);
+  const filteredUsers = safeUsers.filter(user => statusFilter === 'all' || user.status === statusFilter);
 
   return (
     <AppLayout>
