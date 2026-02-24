@@ -36,7 +36,17 @@ app.use("/api/admin", adminRouter);
 
 const port = Number(process.env.PORT || process.env.API_PORT || 3001);
 
-await connectMongo();
+try {
+  // eslint-disable-next-line no-console
+  console.log(
+    `Startup env: MONGO_URI=${process.env.MONGO_URI ? "set" : "missing"}, MONGO_DB_NAME=${process.env.MONGO_DB_NAME ? "set" : "missing"}, JWT_SECRET=${process.env.JWT_SECRET ? "set" : "missing"}`,
+  );
+  await connectMongo();
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.error("Failed to start: Mongo connection error", err);
+  process.exit(1);
+}
 
 const seedAdminIfNeeded = async () => {
   const email = String(process.env.SEED_ADMIN_EMAIL || "").trim().toLowerCase();
@@ -78,7 +88,13 @@ const seedAdminIfNeeded = async () => {
   });
 };
 
-await seedAdminIfNeeded();
+try {
+  await seedAdminIfNeeded();
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.error("Failed to start: admin seed error", err);
+  process.exit(1);
+}
 
 app.listen(port, () => {
   // eslint-disable-next-line no-console
